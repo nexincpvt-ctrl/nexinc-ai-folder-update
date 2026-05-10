@@ -79,7 +79,12 @@ export default function HomePage() {
       id: useChatSessionId,
       transport,
       onError: (err) => {
-        toast.error(err.message ?? 'Request failed.')
+        const isLocal = selectedModel === 'nexinc-intelligence-v1' || selectedModel === 'nexinc-speed-v1' || selectedModel.includes('lmstudio')
+        if (isLocal && err.message.toLowerCase().includes('failed to fetch')) {
+          toast.error('Local AI backend is offline. Start LM Studio and ngrok.')
+        } else {
+          toast.error(err.message ?? 'Request failed.')
+        }
       },
     })
 

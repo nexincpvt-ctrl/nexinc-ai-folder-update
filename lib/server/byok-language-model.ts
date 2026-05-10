@@ -18,6 +18,7 @@ export function createByokLanguageModel(
       const lmstudio = createOpenAI({
         apiKey: key || 'lm-studio',
         baseURL: localBaseUrl || process.env.LMSTUDIO_BASE_URL || 'http://localhost:1234/v1',
+        compatibility: 'compatible', // Ensures OpenAI-compatible endpoints like LM Studio don't reject requests
         headers: {
           'ngrok-skip-browser-warning': 'true',
         },
@@ -28,6 +29,7 @@ export function createByokLanguageModel(
       const nexinc = createOpenAI({
         apiKey: 'nexinc-free-local',
         baseURL: 'https://scam-storewide-peroxide.ngrok-free.dev/v1',
+        compatibility: 'compatible', // Fixes "invalid type for input" and forces /chat/completions format
         headers: {
           'ngrok-skip-browser-warning': 'true',
         },
