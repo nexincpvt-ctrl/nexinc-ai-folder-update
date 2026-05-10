@@ -23,6 +23,14 @@ type RowState = Partial<Record<ByokProvider, { visible: boolean; draft: string; 
 
 const ROWS: { id: ByokProvider; help: string }[] = [
   {
+    id: 'nexinc',
+    help: 'Nexinc Official API Key (supports all Nexinc models)',
+  },
+  {
+    id: 'lmstudio',
+    help: 'Connect to LM Studio (default: http://localhost:1234/v1) or any OpenAI-compatible local API.',
+  },
+  {
     id: 'openai',
     help: 'From https://platform.openai.com/api-keys',
   },
@@ -37,6 +45,10 @@ const ROWS: { id: ByokProvider; help: string }[] = [
   {
     id: 'anthropic',
     help: 'From Anthropic Console (optional if you route via OpenRouter)',
+  },
+  {
+    id: 'xai',
+    help: 'From https://console.x.ai',
   },
 ]
 
@@ -152,7 +164,7 @@ export function ByokConnectionPanel() {
                 <div className="relative flex-1">
                   <Input
                     type={visible ? 'text' : 'password'}
-                    value={draft}
+                    value={draft || ''}
                     onChange={(e) => setField(config.id, { draft: e.target.value })}
                     placeholder={saved ? 'Enter a new key to replace…' : `Paste ${label} API key`}
                     disabled={busy}
@@ -193,22 +205,22 @@ export function ByokConnectionPanel() {
           )
         })}
       </div>
-
       <Separator />
 
-      <div className="space-y-3">
-        <Label htmlFor="custom-or">OpenRouter custom model slug</Label>
-        <Input
-          id="custom-or"
-          value={settings.customOpenRouterModelId}
-          onChange={(e) => updateSettings({ customOpenRouterModelId: e.target.value })}
-          placeholder="e.g. meta-llama/llama-3.3-70b-instruct"
-        />
-        <p className="text-xs text-muted-foreground">
-          Used when you select &quot;OpenRouter — your model slug&quot; in the model picker.
-        </p>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-3">
+          <Label htmlFor="custom-or">OpenRouter custom model slug</Label>
+          <Input
+            id="custom-or"
+            value={settings.customOpenRouterModelId || ''}
+            onChange={(e) => updateSettings({ customOpenRouterModelId: e.target.value })}
+            placeholder="e.g. meta-llama/llama-3.3-70b-instruct"
+          />
+          <p className="text-xs text-muted-foreground">
+            Used for &quot;OpenRouter — your model slug&quot; picker option.
+          </p>
+        </div>
       </div>
-
       <div className="flex flex-wrap gap-2 pt-2">
         <Button
           type="button"

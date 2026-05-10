@@ -219,18 +219,14 @@ export function InputArea({
               variant="ghost"
               size="sm"
               className={cn(
-                "h-7 px-2 gap-1.5 text-xs font-medium transition-colors",
-                !hasKey && "text-destructive hover:text-destructive hover:bg-destructive/10"
+                "h-7 px-2 gap-1.5 text-xs font-medium transition-colors border border-transparent",
+                !hasKey ? "text-amber-600 bg-amber-500/10 border-amber-500/20 hover:bg-amber-500/20" : "text-foreground hover:bg-muted"
               )}
               onClick={() => setModelSelectorOpen(true)}
             >
-              {hasKey ? (
-                <Sparkles className="h-3.5 w-3.5 text-primary" />
-              ) : (
-                <AlertCircle className="h-3.5 w-3.5" />
-              )}
+              <div className={cn("w-1.5 h-1.5 rounded-full shrink-0", hasKey ? "bg-emerald-500" : "bg-amber-500 animate-pulse")} />
+              <span className="opacity-70 uppercase text-[10px] tracking-tight">{modelConfig?.provider}:</span>
               {modelConfig?.label || 'Select Model'}
-              {!hasKey && <span className="ml-1 opacity-80">(Key missing)</span>}
               <ChevronDown className="h-3 w-3 opacity-50" />
             </Button>
 
@@ -272,7 +268,7 @@ export function InputArea({
           {/* Textarea */}
           <Textarea
             ref={textareaRef}
-            value={value}
+            value={value || ''}
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Message Nexinc..."

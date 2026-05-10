@@ -57,6 +57,9 @@ export interface Settings {
   lastByokProvider: ByokProvider
   /** Legacy: custom OpenRouter model slug when advanced mode picks a free-text model */
   customOpenRouterModelId: string
+  /** Local Model Settings */
+  localModelBaseUrl: string
+  localModelId: string
 }
 
 export const defaultSettings: Settings = {
@@ -86,4 +89,6 @@ export const defaultSettings: Settings = {
   codeTheme: 'oneDark',
   lastByokProvider: 'openai',
   customOpenRouterModelId: '',
+  localModelBaseUrl: 'http://localhost:1234/v1',
+  localModelId: 'local-model',
 }

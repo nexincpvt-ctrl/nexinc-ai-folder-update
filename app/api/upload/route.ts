@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server'
-import { PDFParse } from 'pdf-parse'
 
 export async function POST(req: Request) {
   try {
@@ -22,11 +21,13 @@ export async function POST(req: Request) {
     } else if (file.type === 'application/pdf') {
       type = 'pdf'
       try {
-        const parser = new PDFParse({ data: buffer })
-        const extracted = await parser.getText()
-        await parser.destroy()
-        content = extracted.text || '[PDF parsed with no plain text]'
-      } catch {
+        // @ts-ignore
+        const pdf = await import('pdf-parse')
+        const parse = (pdf as any).default || pdf
+        const data = await parse(buffer)
+        content = data.text || '[PDF parsed with no plain text]'
+      } catch (e) {
+        console.error('PDF parse error:', e)
         content = '[Unable to extract PDF text — try another PDF]'
       }
     } else if (
@@ -35,6 +36,7 @@ export async function POST(req: Request) {
     ) {
       type = 'document'
       try {
+        // @ts-ignore
         const mammoth = await import('mammoth')
         const result = await mammoth.extractRawText({ buffer })
         content = result.value
@@ -55,7 +57,7 @@ export async function POST(req: Request) {
     const url = type === 'image' ? content : ''
 
     return NextResponse.json({
-      id: crypto.randomUUID(),
+      id: Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15),
       type,
       name: file.name,
       url,

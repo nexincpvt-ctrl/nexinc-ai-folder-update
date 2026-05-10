@@ -131,7 +131,7 @@ export function SettingsDialog() {
 
   return (
     <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-      <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col p-0">
+      <DialogContent className="!fixed !inset-0 !top-0 !left-0 !translate-x-0 !translate-y-0 !max-w-none !w-screen !h-screen flex flex-col !p-0 !border-none !rounded-none !shadow-none">
         <DialogHeader className="px-6 py-4 border-b border-border">
           <DialogTitle className="flex items-center gap-2 text-xl">
             <Settings className="h-5 w-5 text-primary" />

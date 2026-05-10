@@ -18,7 +18,9 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useByokChatTransport } from '@/hooks/use-byok-chat-transport'
 import { resolveEffectiveModel } from '@/lib/byok/effective-model'
+import { getCatalogModel } from '@/lib/byok/model-catalog'
 import { chatToMarkdownExport } from '@/lib/export-chat'
+import { BYOK_PROVIDER_LABELS } from '@/lib/byok/types'
 
 function generateId() {
   return crypto.randomUUID()
@@ -34,6 +36,11 @@ export default function HomePage() {
   const ephemeralDraftIdRef = useRef(generateId())
   const prevHydratedChatIdRef = useRef<string | null>(null)
 
+  const [hasHydrated, setHasHydrated] = useState(false)
+  useEffect(() => {
+    setHasHydrated(true)
+  }, [])
+
   const {
     chats,
     currentChatId,
@@ -41,6 +48,7 @@ export default function HomePage() {
     addChat,
     updateChat,
     selectedModel,
+    setSelectedModel,
     settings,
     sidebarOpen,
     setSidebarOpen,
@@ -49,8 +57,10 @@ export default function HomePage() {
   const { setTheme } = useTheme()
 
   useEffect(() => {
-    setTheme(settings.theme)
-  }, [settings.theme, setTheme])
+    if (hasHydrated) {
+      setTheme(settings.theme)
+    }
+  }, [settings.theme, setTheme, hasHydrated])
 
   const transport = useByokChatTransport({
     selectedModelId: selectedModel,
@@ -58,6 +68,8 @@ export default function HomePage() {
     temperature: settings.temperature,
     maxOutputTokens: settings.maxOutputTokens,
     customOpenRouterModelId: settings.customOpenRouterModelId,
+    localModelBaseUrl: settings.localModelBaseUrl,
+    localModelId: settings.localModelId,
   })
 
   const useChatSessionId = currentChatId ?? ephemeralDraftIdRef.current
@@ -74,6 +86,7 @@ export default function HomePage() {
   const isLoading = status === 'streaming' || status === 'submitted'
 
   useEffect(() => {
+    if (!hasHydrated) return
     const prevId = prevHydratedChatIdRef.current
     const switchedView = prevId !== currentChatId
     prevHydratedChatIdRef.current = currentChatId
@@ -85,6 +98,10 @@ export default function HomePage() {
 
     const chat = chats.find((c) => c.id === currentChatId)
     if (!chat) return
+
+    if (switchedView && chat.model && chat.model !== selectedModel) {
+      setSelectedModel(chat.model)
+    }
 
     if (!switchedView) return
 
@@ -104,7 +121,7 @@ export default function HomePage() {
   }, [currentChatId, chats, messages.length, setMessages])
 
   useEffect(() => {
-    if (!currentChatId || messages.length === 0) return
+    if (!currentChatId || messages.length === 0 || isLoading) return
     const storedMessages = messages.map((m) => ({
       id: m.id,
       role: m.role as 'user' | 'assistant' | 'system',
@@ -140,14 +157,37 @@ export default function HomePage() {
     async (attachments?: Attachment[]) => {
       if (!input.trim() && !attachments?.length) return
 
-      const resolved = resolveEffectiveModel(selectedModel, settings)
+      const resolved = resolveEffectiveModel(selectedModel, {
+        customOpenRouterModelId: settings.customOpenRouterModelId,
+      })
+
+      // DEBUG: Log model resolution
+      console.log('[DEBUG] Model Selection:', {
+        uiSelected: selectedModel,
+        resolvedProvider: resolved?.provider,
+        resolvedApiModel: resolved?.apiModelId
+      })
+
       if (!resolved) {
-        toast.error('Pick a model or set an OpenRouter slug in Settings.')
+        toast.error('Please select a model in the selector.')
         return
       }
+      
       const { loadProviderKey } = await import('@/lib/byok/crypto')
-      if (!(await loadProviderKey(resolved.provider))) {
-        toast.error(`Add your API key for ${resolved.provider}.`)
+      
+      // Try to load the key for the effective provider
+      let apiKey = await loadProviderKey(resolved.provider)
+      let requiredProvider = resolved.provider
+
+      // ABSOLUTE BYPASS: No keys required for Nexinc Local or LM Studio
+      if (resolved.provider === 'lmstudio' || resolved.provider === 'nexinc-local') {
+        apiKey = 'lm-studio-bypass'
+      }
+
+      if (!apiKey) {
+        const providerName = BYOK_PROVIDER_LABELS[requiredProvider] || requiredProvider.toUpperCase()
+        const modelName = getCatalogModel(selectedModel)?.label || selectedModel
+        toast.error(`The selected model (${modelName}) requires an ${providerName} API key. Please add it in Settings.`)
         return
       }
 
@@ -182,7 +222,34 @@ export default function HomePage() {
       }
 
       setInput('')
-      sendMessage({ text: messageContent })
+
+      const messageParts: any[] = [{ type: 'text', text: input }]
+
+      if (attachments?.length) {
+        for (const a of attachments) {
+          if (a.type === 'image' && a.url) {
+            messageParts.push({
+              type: 'image',
+              image: a.url, // Base64 or URL
+            })
+          } else if (a.content) {
+            // For documents, we still append to text or use a file part if the model supports it
+            // For simplicity and maximum compatibility, we'll keep the text injection for docs
+            messageParts[0].text += `\n\n[FILE: ${a.name}]\n${a.content}`
+          }
+        }
+      }
+
+      sendMessage({
+        text: input, // Still used for internal state maybe
+        files: attachments?.map(a => ({
+          name: a.name,
+          url: a.url || '',
+          type: 'file',
+          mediaType: a.type === 'image' ? 'image/jpeg' : 
+                     a.type === 'pdf' ? 'application/pdf' : 'text/plain',
+        }))
+      })
     },
     [
       input,
@@ -259,6 +326,19 @@ export default function HomePage() {
     },
     [chats],
   )
+
+  if (!hasHydrated) {
+    return (
+      <div className="nexinc-shell-bg flex h-screen items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center shadow-xl animate-pulse">
+            <Sparkles className="h-6 w-6 text-primary-foreground" />
+          </div>
+          <span className="text-sm font-medium animate-pulse opacity-50">Initializing Nexinc...</span>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="nexinc-shell-bg flex h-screen overflow-x-auto overflow-y-hidden relative">

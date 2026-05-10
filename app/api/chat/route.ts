@@ -17,9 +17,10 @@ const BodySchema = z.object({
   systemPrompt: z.string().max(32000).optional(),
   temperature: z.number().min(0).max(2).optional(),
   maxOutputTokens: z.number().int().min(256).max(128000).optional(),
+  localBaseUrl: z.string().url().optional(),
 })
 
-const PROVIDERS: ByokProvider[] = ['openai', 'gemini', 'openrouter', 'anthropic']
+const PROVIDERS: ByokProvider[] = ['nexinc', 'nexinc-local', 'openai', 'gemini', 'openrouter', 'anthropic', 'xai', 'lmstudio']
 
 function isProvider(v: string): v is ByokProvider {
   return (PROVIDERS as string[]).includes(v)
@@ -56,6 +57,7 @@ export async function POST(req: Request) {
       providerHeader,
       apiKey,
       body.apiModelId.trim(),
+      body.localBaseUrl,
     )
 
     const stream = streamText({

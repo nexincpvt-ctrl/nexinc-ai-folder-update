@@ -1,4 +1,4 @@
-export type ByokProvider = 'openai' | 'gemini' | 'openrouter' | 'anthropic'
+export type ByokProvider = 'nexinc' | 'nexinc-local' | 'openai' | 'gemini' | 'openrouter' | 'anthropic' | 'xai' | 'lmstudio'
 
 export interface CatalogModelEntry {
   id: string
@@ -10,8 +10,12 @@ export interface CatalogModelEntry {
 }
 
 export const BYOK_PROVIDER_LABELS: Record<ByokProvider, string> = {
+  nexinc: 'Nexinc Cloud',
+  'nexinc-local': 'Nexinc AI (Local)',
   openai: 'OpenAI',
   gemini: 'Google Gemini',
   openrouter: 'OpenRouter',
   anthropic: 'Anthropic',
+  xai: 'xAI (Grok)',
+  lmstudio: 'LM Studio',
 }

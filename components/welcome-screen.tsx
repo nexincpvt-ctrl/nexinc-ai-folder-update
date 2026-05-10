@@ -22,10 +22,10 @@ import { useState, useEffect } from 'react'
 
 const suggestions = [
   {
-    icon: Code,
-    title: 'Help me debug this code',
-    description: 'Analyze and fix code issues',
-    prompt: 'I have a bug in my code. Can you help me debug it?',
+    icon: Sparkles,
+    title: 'Use Nexinc AI (Free)',
+    description: 'Powered by your local machine',
+    prompt: 'Start a session with Nexinc AI. How are you today?',
   },
   {
     icon: FileText,
@@ -78,7 +78,9 @@ export function WelcomeScreen({ onSuggestionClick }: WelcomeScreenProps) {
   useEffect(() => {
     if (!modelConfig) return
     const bundle = readEncryptedBundle()
-    setHasKey(!!bundle[modelConfig.provider])
+    // Nexinc Local and LM Studio providers don't require a stored API key
+    const isFree = modelConfig.provider === 'nexinc-local' || modelConfig.provider === 'lmstudio'
+    setHasKey(isFree || !!bundle[modelConfig.provider])
   }, [selectedModel, modelConfig])
 
   return (
@@ -91,7 +93,7 @@ export function WelcomeScreen({ onSuggestionClick }: WelcomeScreenProps) {
           </div>
           <h1 className="text-3xl font-bold text-foreground mb-2">Welcome to Nexinc</h1>
           <p className="text-muted-foreground text-lg leading-relaxed">
-            Paste your keys once — Nexinc proxies requests through your deployment over HTTPS without storing credentials server-side.
+            Local-first AI workspace. Use <strong>Nexinc AI</strong> for free local inference (no key required) or connect your cloud providers via BYOK.
           </p>
         </div>
 
@@ -109,7 +111,7 @@ export function WelcomeScreen({ onSuggestionClick }: WelcomeScreenProps) {
               hasKey ? "text-muted-foreground" : "text-destructive/80"
             )}>
               {hasKey 
-                ? (modelConfig?.description || 'Open the model gallery or settings to connect a provider.')
+                ? (modelConfig?.description || 'Your workspace is ready.')
                 : `Missing API key for ${modelConfig?.provider.toUpperCase()}`
               }
             </span>

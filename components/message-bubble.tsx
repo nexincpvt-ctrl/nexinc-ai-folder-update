@@ -36,6 +36,56 @@ import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import type { UIMessage } from 'ai'
+import { memo } from 'react'
+
+const MarkdownCode = memo(({ className, children, ...props }: any) => {
+  const match = /language-(\w+)/.exec(className || '')
+  const isInline = !match && !className
+
+  if (isInline) {
+    return (
+      <code className="bg-secondary/70 px-1.5 py-0.5 rounded text-[13px] font-mono" {...props}>
+        {children}
+      </code>
+    )
+  }
+
+  return (
+    <div className="relative group/code my-4 rounded-xl overflow-hidden border border-border/60">
+      <div className="absolute right-2 top-2 z-10 opacity-0 group-hover/code:opacity-100 transition-opacity">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 bg-background/85 border border-border/60"
+          type="button"
+          onClick={async () => {
+            await navigator.clipboard.writeText(String(children).replace(/\n$/, ''))
+          }}
+        >
+          <Copy className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+      {match && (
+        <div className="text-[11px] text-muted-foreground bg-secondary/80 px-3 py-1 font-mono border-b border-border/50">
+          {match[1]}
+        </div>
+      )}
+      <SyntaxHighlighter
+        style={oneDark}
+        language={match?.[1] || 'text'}
+        PreTag="div"
+        className="!mt-0 !rounded-none"
+        customStyle={{
+          margin: 0,
+          borderRadius: 0,
+        }}
+      >
+        {String(children).replace(/\n$/, '')}
+      </SyntaxHighlighter>
+    </div>
+  )
+})
+MarkdownCode.displayName = 'MarkdownCode'
 
 const SANITIZER_SCHEMA = {
   ...defaultSchema,
@@ -57,24 +107,20 @@ interface MessageBubbleProps {
 }
 
 function getMessageText(message: UIMessage): string {
-  if (!message.parts || !Array.isArray(message.parts)) return ''
+  if (!message.parts || !Array.isArray(message.parts)) return (message as any).content || ''
   return message.parts
-    .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
-    .map((p) => p.text)
+    .map((p) => {
+      if (p.type === 'text') return (p as any).text || ''
+      if (p.type === 'reasoning') return `\n\n*Reasoning:*\n${(p as any).reasoning || ''}\n\n`
+      return ''
+    })
     .join('')
 }
 
 function getFileParts(message: UIMessage) {
   if (!message.parts || !Array.isArray(message.parts)) return []
   return message.parts.filter(
-    (
-      p,
-    ): p is {
-      type: 'file'
-      mediaType?: string
-      filename?: string
-      url?: string
-    } => typeof p === 'object' && (p as { type?: string }).type === 'file',
+    (p): p is any => typeof p === 'object' && (p as any).type === 'file',
   )
 }
 
@@ -209,53 +255,7 @@ export function MessageBubble({
                 remarkPlugins={[remarkGfm]}
                 rehypePlugins={[[rehypeSanitize, SANITIZER_SCHEMA]]}
                 components={{
-                  code({ className, children, ...props }) {
-                    const match = /language-(\w+)/.exec(className || '')
-                    const isInline = !match && !className
-
-                    if (isInline) {
-                      return (
-                        <code className="bg-secondary/70 px-1.5 py-0.5 rounded text-[13px] font-mono" {...props}>
-                          {children}
-                        </code>
-                      )
-                    }
-
-                    return (
-                      <div className="relative group/code my-4 rounded-xl overflow-hidden border border-border/60">
-                        <div className="absolute right-2 top-2 z-10 opacity-0 group-hover/code:opacity-100 transition-opacity">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 bg-background/85 border border-border/60"
-                            type="button"
-                            onClick={async () => {
-                              await navigator.clipboard.writeText(String(children).replace(/\n$/, ''))
-                            }}
-                          >
-                            <Copy className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                        {match && (
-                          <div className="text-[11px] text-muted-foreground bg-secondary/80 px-3 py-1 font-mono border-b border-border/50">
-                            {match[1]}
-                          </div>
-                        )}
-                        <SyntaxHighlighter
-                          style={oneDark}
-                          language={match?.[1] || 'text'}
-                          PreTag="div"
-                          className="!mt-0 !rounded-none"
-                          customStyle={{
-                            margin: 0,
-                            borderRadius: 0,
-                          }}
-                        >
-                          {String(children).replace(/\n$/, '')}
-                        </SyntaxHighlighter>
-                      </div>
-                    )
-                  },
+                  code: MarkdownCode,
                   p({ children }) {
                     return <p className="my-2 leading-relaxed">{children}</p>
                   },
