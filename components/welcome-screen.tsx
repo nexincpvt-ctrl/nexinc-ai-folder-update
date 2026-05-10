@@ -1,7 +1,8 @@
 'use client'
 
 import { useChatStore } from '@/lib/store'
-import { getModelById } from '@/lib/types'
+import { cn } from '@/lib/utils'
+import { getCatalogModel } from '@/lib/byok/model-catalog'
 import { Button } from '@/components/ui/button'
 import {
   Sparkles,
@@ -14,7 +15,10 @@ import {
   Brain,
   Palette,
   Globe,
+  AlertCircle,
 } from 'lucide-react'
+import { readEncryptedBundle } from '@/lib/byok/crypto'
+import { useState, useEffect } from 'react'
 
 const suggestions = [
   {
@@ -67,31 +71,60 @@ interface WelcomeScreenProps {
 }
 
 export function WelcomeScreen({ onSuggestionClick }: WelcomeScreenProps) {
-  const { selectedModel } = useChatStore()
-  const modelConfig = getModelById(selectedModel)
+  const { selectedModel, setSettingsOpen } = useChatStore()
+  const modelConfig = getCatalogModel(selectedModel)
+  const [hasKey, setHasKey] = useState(true)
+
+  useEffect(() => {
+    if (!modelConfig) return
+    const bundle = readEncryptedBundle()
+    setHasKey(!!bundle[modelConfig.provider])
+  }, [selectedModel, modelConfig])
 
   return (
-    <div className="min-h-full flex flex-col items-center justify-center px-4 py-8">
-      <div className="max-w-2xl w-full text-center">
+    <div className="min-h-full flex flex-col items-center justify-center px-4 py-10">
+      <div className="max-w-2xl w-full text-center space-y-2">
         {/* Logo and Title */}
         <div className="flex flex-col items-center mb-8">
-          <div className="w-16 h-16 rounded-2xl bg-primary flex items-center justify-center mb-4 shadow-lg shadow-primary/20">
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary to-primary/75 flex items-center justify-center mb-5 shadow-xl shadow-primary/35">
             <Sparkles className="h-8 w-8 text-primary-foreground" />
           </div>
           <h1 className="text-3xl font-bold text-foreground mb-2">Welcome to Nexinc</h1>
-          <p className="text-muted-foreground text-lg">
-            Your intelligent AI assistant powered by cutting-edge technology
+          <p className="text-muted-foreground text-lg leading-relaxed">
+            Paste your keys once — Nexinc proxies requests through your deployment over HTTPS without storing credentials server-side.
           </p>
         </div>
 
         {/* Current Model */}
-        <div className="flex items-center justify-center gap-2 mb-8">
-          <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-muted text-sm">
-            <Zap className="h-4 w-4 text-primary" />
-            <span className="font-medium">{modelConfig?.nexincName || 'Nexinc Pro'}</span>
+        <div className="flex flex-col items-center gap-3 mb-8">
+          <div className={cn(
+            "inline-flex items-center gap-2 px-4 py-2 rounded-full nexinc-glass-soft border text-sm mx-auto transition-colors",
+            hasKey ? "border-border/60" : "border-destructive/50 bg-destructive/5 text-destructive"
+          )}>
+            {hasKey ? <Zap className="h-4 w-4 text-primary" /> : <AlertCircle className="h-4 w-4" />}
+            <span className="font-medium">{modelConfig?.label || 'Pick a model'}</span>
             <span className="text-muted-foreground">•</span>
-            <span className="text-muted-foreground">{modelConfig?.description}</span>
+            <span className={cn(
+              "text-left max-w-md line-clamp-2",
+              hasKey ? "text-muted-foreground" : "text-destructive/80"
+            )}>
+              {hasKey 
+                ? (modelConfig?.description || 'Open the model gallery or settings to connect a provider.')
+                : `Missing API key for ${modelConfig?.provider.toUpperCase()}`
+              }
+            </span>
           </div>
+
+          {!hasKey && (
+            <Button 
+              variant="link" 
+              size="sm" 
+              className="text-primary h-auto p-0"
+              onClick={() => setSettingsOpen(true)}
+            >
+              Add your API key in Settings → Connections
+            </Button>
+          )}
         </div>
 
         {/* Capabilities */}
@@ -99,7 +132,7 @@ export function WelcomeScreen({ onSuggestionClick }: WelcomeScreenProps) {
           {capabilities.map((cap) => (
             <div
               key={cap.label}
-              className="flex flex-col items-center p-4 rounded-xl bg-card border border-border hover:border-primary/50 transition-colors"
+              className="flex flex-col items-center p-4 rounded-xl bg-card/70 border border-border/70 hover:border-primary/40 hover:bg-card/90 backdrop-blur-md transition-all duration-200"
             >
               <cap.icon className="h-6 w-6 text-primary mb-2" />
               <span className="font-medium text-sm">{cap.label}</span>

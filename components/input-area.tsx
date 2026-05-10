@@ -4,13 +4,13 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { useChatStore } from '@/lib/store'
-import { getModelById, Attachment } from '@/lib/types'
+import { Attachment } from '@/lib/types'
+import { getCatalogModel } from '@/lib/byok/model-catalog'
 import {
   Send,
   Paperclip,
   Image as ImageIcon,
   FileText,
-  Mic,
   StopCircle,
   X,
   ChevronDown,
@@ -20,7 +20,9 @@ import {
   Settings2,
   Globe,
   FileSearch,
+  AlertCircle,
 } from 'lucide-react'
+import { readEncryptedBundle } from '@/lib/byok/crypto'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -54,11 +56,11 @@ export function InputArea({
   disabled,
 }: InputAreaProps) {
   const [attachments, setAttachments] = useState<Attachment[]>([])
-  const [isRecording, setIsRecording] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const cameraCaptureRef = useRef<HTMLInputElement>(null)
 
   const {
     selectedModel,
@@ -67,7 +69,9 @@ export function InputArea({
     updateSettings,
   } = useChatStore()
 
-  const modelConfig = getModelById(selectedModel)
+  const [hasKey, setHasKey] = useState(true)
+
+  const modelConfig = getCatalogModel(selectedModel)
 
   // Auto-resize textarea
   useEffect(() => {
@@ -77,6 +81,13 @@ export function InputArea({
       textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`
     }
   }, [value])
+
+  // Check if API key exists for selected model
+  useEffect(() => {
+    if (!modelConfig) return
+    const bundle = readEncryptedBundle()
+    setHasKey(!!bundle[modelConfig.provider])
+  }, [selectedModel])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !settings.sendWithEnter) {
@@ -142,22 +153,8 @@ export function InputArea({
     setAttachments((prev) => prev.filter((a) => a.id !== id))
   }
 
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      setIsRecording(true)
-      // Voice recording implementation would go here
-    } catch (error) {
-      console.error('Failed to start recording:', error)
-    }
-  }
-
-  const stopRecording = () => {
-    setIsRecording(false)
-  }
-
   return (
-    <div className="shrink-0 border-t border-border bg-background p-4">
+    <div className="shrink-0 border-t border-border/60 bg-background/85 backdrop-blur-xl p-4">
       <div className="max-w-3xl mx-auto">
         {/* Attachments Preview */}
         {attachments.length > 0 && (
@@ -198,10 +195,10 @@ export function InputArea({
         {/* Main Input Container */}
         <div
           className={cn(
-            'relative rounded-2xl border-2 transition-all',
+            'relative rounded-2xl border-2 transition-all duration-200',
             isDragging
-              ? 'border-primary bg-primary/5'
-              : 'border-border bg-card hover:border-primary/50 focus-within:border-primary'
+              ? 'border-primary bg-primary/10'
+              : 'border-border/70 bg-card/80 backdrop-blur-md hover:border-primary/40 focus-within:border-primary',
           )}
           onDrop={handleDrop}
           onDragOver={handleDragOver}
@@ -221,11 +218,19 @@ export function InputArea({
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 px-2 gap-1.5 text-xs font-medium"
+              className={cn(
+                "h-7 px-2 gap-1.5 text-xs font-medium transition-colors",
+                !hasKey && "text-destructive hover:text-destructive hover:bg-destructive/10"
+              )}
               onClick={() => setModelSelectorOpen(true)}
             >
-              <Sparkles className="h-3.5 w-3.5 text-primary" />
-              {modelConfig?.nexincName || 'Select Model'}
+              {hasKey ? (
+                <Sparkles className="h-3.5 w-3.5 text-primary" />
+              ) : (
+                <AlertCircle className="h-3.5 w-3.5" />
+              )}
+              {modelConfig?.label || 'Select Model'}
+              {!hasKey && <span className="ml-1 opacity-80">(Key missing)</span>}
               <ChevronDown className="h-3 w-3 opacity-50" />
             </Button>
 
@@ -286,6 +291,18 @@ export function InputArea({
                 className="hidden"
                 onChange={(e) => e.target.files && handleFileUpload(e.target.files)}
               />
+              <input
+                ref={cameraCaptureRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={(e) => {
+                  const list = e.target.files
+                  if (list?.length) void handleFileUpload(list)
+                  e.target.value = ''
+                }}
+              />
 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -309,32 +326,16 @@ export function InputArea({
                     Upload Image
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => {
+                      cameraCaptureRef.current?.click()
+                    }}
+                  >
                     <Camera className="h-4 w-4 mr-2" />
-                    Scan Document
+                    Camera capture
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-
-              <TooltipProvider delayDuration={300}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className={cn('h-8 w-8', isRecording && 'text-destructive')}
-                      onClick={isRecording ? stopRecording : startRecording}
-                    >
-                      {isRecording ? (
-                        <StopCircle className="h-4 w-4 animate-pulse" />
-                      ) : (
-                        <Mic className="h-4 w-4" />
-                      )}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>{isRecording ? 'Stop Recording' : 'Voice Input'}</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
             </div>
 
             <div className="flex items-center gap-2">

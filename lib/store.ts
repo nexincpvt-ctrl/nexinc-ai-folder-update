@@ -2,10 +2,12 @@
 
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { Settings, defaultSettings, Chat, Attachment, APIProvider, getModelsByProvider } from './types'
+import { Settings, defaultSettings, Chat, Attachment } from './types'
+import { DEFAULT_MODEL_ID } from '@/lib/byok/model-catalog'
+import type { ByokProvider } from '@/lib/byok/types'
+import { catalogForProvider } from '@/lib/byok/model-catalog'
 
 interface ChatStore {
-  // Chats
   chats: Chat[]
   currentChatId: string | null
   addChat: (chat: Chat) => void
@@ -15,12 +17,10 @@ interface ChatStore {
   getCurrentChat: () => Chat | undefined
   clearAllChats: () => void
 
-  // Settings
   settings: Settings
   updateSettings: (updates: Partial<Settings>) => void
   resetSettings: () => void
-  
-  // UI State
+
   sidebarOpen: boolean
   settingsOpen: boolean
   modelSelectorOpen: boolean
@@ -31,34 +31,27 @@ interface ChatStore {
   setModelSelectorOpen: (open: boolean) => void
   setAttachmentPreview: (attachment: Attachment | null) => void
 
-  // Selected model
   selectedModel: string
   setSelectedModel: (model: string) => void
 
-  // Active provider filter
-  activeProvider: APIProvider | 'all'
-  setActiveProvider: (provider: APIProvider | 'all') => void
-  
-  // API Key management
-  setApiKey: (provider: APIProvider, apiKey: string) => void
-  getApiKey: (provider: APIProvider) => string
-  isProviderEnabled: (provider: APIProvider) => boolean
-  toggleProvider: (provider: APIProvider, enabled: boolean) => void
+  activeProvider: ByokProvider | 'all'
+  setActiveProvider: (provider: ByokProvider | 'all') => void
 
-  // Get available models based on enabled providers
-  getAvailableModels: () => ReturnType<typeof getModelsByProvider>
+  /** Returns catalog entries for the sidebar / model UI */
+  getAvailableModels: () => ReturnType<typeof catalogForProvider>
 }
 
 export const useChatStore = create<ChatStore>()(
   persist(
     (set, get) => ({
-      // Chats
       chats: [],
       currentChatId: null,
       addChat: (chat) => set((state) => ({ chats: [chat, ...state.chats] })),
       updateChat: (id, updates) =>
         set((state) => ({
-          chats: state.chats.map((c) => (c.id === id ? { ...c, ...updates, updatedAt: new Date() } : c)),
+          chats: state.chats.map((c) =>
+            c.id === id ? { ...c, ...updates, updatedAt: new Date() } : c,
+          ),
         })),
       deleteChat: (id) =>
         set((state) => ({
@@ -66,13 +59,9 @@ export const useChatStore = create<ChatStore>()(
           currentChatId: state.currentChatId === id ? null : state.currentChatId,
         })),
       setCurrentChat: (id) => set({ currentChatId: id }),
-      getCurrentChat: () => {
-        const state = get()
-        return state.chats.find((c) => c.id === state.currentChatId)
-      },
+      getCurrentChat: () => get().chats.find((c) => c.id === get().currentChatId),
       clearAllChats: () => set({ chats: [], currentChatId: null }),
 
-      // Settings
       settings: defaultSettings,
       updateSettings: (updates) =>
         set((state) => ({
@@ -80,7 +69,6 @@ export const useChatStore = create<ChatStore>()(
         })),
       resetSettings: () => set({ settings: defaultSettings }),
 
-      // UI State
       sidebarOpen: true,
       settingsOpen: false,
       modelSelectorOpen: false,
@@ -90,62 +78,43 @@ export const useChatStore = create<ChatStore>()(
       setSettingsOpen: (open) => set({ settingsOpen: open }),
       setModelSelectorOpen: (open) => set({ modelSelectorOpen: open }),
       setAttachmentPreview: (attachment) =>
-        set({ currentAttachment: attachment, attachmentPreviewOpen: !!attachment }),
+        set({
+          currentAttachment: attachment,
+          attachmentPreviewOpen: !!attachment,
+        }),
 
-      // Selected model
-      selectedModel: 'nexinc-pro-3.5',
-      setSelectedModel: (model) => set({ selectedModel: model }),
+      selectedModel: DEFAULT_MODEL_ID,
+      setSelectedModel: (model) =>
+        set((state) => {
+          const cfg = catalogForProvider('all').find((m) => m.id === model)
+          const nextLast = cfg?.provider ?? state.settings.lastByokProvider
+          return {
+            selectedModel: model,
+            settings: {
+              ...state.settings,
+              lastByokProvider: nextLast,
+            },
+          }
+        }),
 
-      // Active provider filter
       activeProvider: 'all',
       setActiveProvider: (provider) => set({ activeProvider: provider }),
 
-      // API Key management
-      setApiKey: (provider, apiKey) =>
-        set((state) => ({
-          settings: {
-            ...state.settings,
-            apiConfigs: state.settings.apiConfigs.map((c) =>
-              c.provider === provider ? { ...c, apiKey, enabled: apiKey.length > 0 } : c
-            ),
-          },
-        })),
-      getApiKey: (provider) => {
-        const config = get().settings.apiConfigs.find((c) => c.provider === provider)
-        return config?.apiKey || ''
-      },
-      isProviderEnabled: (provider) => {
-        const config = get().settings.apiConfigs.find((c) => c.provider === provider)
-        return config?.enabled || false
-      },
-      toggleProvider: (provider, enabled) =>
-        set((state) => ({
-          settings: {
-            ...state.settings,
-            apiConfigs: state.settings.apiConfigs.map((c) =>
-              c.provider === provider ? { ...c, enabled } : c
-            ),
-          },
-        })),
-
-      // Get available models
-      getAvailableModels: () => {
-        const state = get()
-        const enabledProviders = state.settings.apiConfigs
-          .filter((c) => c.enabled)
-          .map((c) => c.provider)
-        
-        // Always include models (using Vercel AI Gateway)
-        return getModelsByProvider(state.activeProvider === 'all' ? 'openai' : state.activeProvider)
-      },
+      getAvailableModels: () =>
+        catalogForProvider(
+          get().activeProvider === 'all'
+            ? 'all'
+            : (get().activeProvider as ByokProvider),
+        ),
     }),
     {
-      name: 'nexinc-storage',
+      name: 'nexinc-storage-v3',
       partialize: (state) => ({
         chats: state.chats,
         settings: state.settings,
         selectedModel: state.selectedModel,
+        activeProvider: state.activeProvider,
       }),
-    }
-  )
+    },
+  ),
 )

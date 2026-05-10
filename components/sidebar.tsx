@@ -16,8 +16,8 @@ import {
   Sparkles,
   MoreHorizontal,
   Edit3,
-  Archive,
-  Star,
+  Eraser,
+  Download,
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -32,9 +32,16 @@ import { format, isToday, isYesterday, isThisWeek, isThisMonth } from 'date-fns'
 interface SidebarProps {
   onNewChat: () => void
   onSelectChat: (id: string) => void
+  onClearCurrentMessages?: () => void
+  onExportChat?: (id: string) => void
 }
 
-export function Sidebar({ onNewChat, onSelectChat }: SidebarProps) {
+export function Sidebar({
+  onNewChat,
+  onSelectChat,
+  onClearCurrentMessages,
+  onExportChat,
+}: SidebarProps) {
   const {
     chats,
     currentChatId,
@@ -112,7 +119,7 @@ export function Sidebar({ onNewChat, onSelectChat }: SidebarProps) {
   }
 
   return (
-    <div className="flex flex-col w-72 border-r border-border bg-sidebar h-screen">
+    <div className="flex flex-col w-72 border-r border-border/60 bg-sidebar/90 backdrop-blur-xl h-screen">
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-sidebar-border">
         <div className="flex items-center gap-2">
@@ -221,13 +228,14 @@ export function Sidebar({ onNewChat, onSelectChat }: SidebarProps) {
                         <Edit3 className="h-4 w-4 mr-2" />
                         Rename
                       </DropdownMenuItem>
-                      <DropdownMenuItem>
-                        <Star className="h-4 w-4 mr-2" />
-                        Add to favorites
-                      </DropdownMenuItem>
-                      <DropdownMenuItem>
-                        <Archive className="h-4 w-4 mr-2" />
-                        Archive
+                      <DropdownMenuItem
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onExportChat?.(chat.id)
+                        }}
+                      >
+                        <Download className="h-4 w-4 mr-2" />
+                        Export markdown
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
@@ -256,7 +264,18 @@ export function Sidebar({ onNewChat, onSelectChat }: SidebarProps) {
       </ScrollArea>
 
       {/* Footer */}
-      <div className="p-3 border-t border-sidebar-border">
+      <div className="p-3 border-t border-sidebar-border space-y-2">
+        {currentChatId && onClearCurrentMessages ? (
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full gap-2 justify-start"
+            onClick={onClearCurrentMessages}
+          >
+            <Eraser className="h-4 w-4" />
+            Clear this chat
+          </Button>
+        ) : null}
         <div className="flex items-center gap-2">
           <Button
             variant="ghost"

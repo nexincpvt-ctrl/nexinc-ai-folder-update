@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react'
 import { useTheme } from 'next-themes'
 import { useChatStore } from '@/lib/store'
-import { APIProvider } from '@/lib/types'
+import { ByokConnectionPanel } from '@/components/settings/byok-connection-panel'
+import { clearAllProviderKeys } from '@/lib/byok/crypto'
 import {
   Dialog,
   DialogContent,
@@ -39,9 +40,6 @@ import {
   Shield,
   Keyboard,
   Volume2,
-  Eye,
-  EyeOff,
-  Check,
   X,
   RefreshCw,
   Sparkles,
@@ -102,25 +100,11 @@ export function SettingsDialog() {
   const { settingsOpen, setSettingsOpen, settings, updateSettings, resetSettings, clearAllChats, chats } = useChatStore()
   const { setTheme, theme } = useTheme()
   const [activeTab, setActiveTab] = useState('general')
-  const [showApiKeys, setShowApiKeys] = useState<Record<string, boolean>>({})
 
   // Sync theme when settings change
   const handleThemeChange = (value: 'light' | 'dark' | 'system') => {
     updateSettings({ theme: value })
     setTheme(value)
-  }
-
-  const toggleApiKeyVisibility = (provider: string) => {
-    setShowApiKeys((prev) => ({ ...prev, [provider]: !prev[provider] }))
-  }
-
-  const handleApiKeyChange = (provider: APIProvider, value: string) => {
-    const updatedConfigs = settings.apiConfigs.map((config) =>
-      config.provider === provider
-        ? { ...config, apiKey: value, enabled: value.length > 0 }
-        : config
-    )
-    updateSettings({ apiConfigs: updatedConfigs })
   }
 
   const handleExportSettings = () => {
@@ -513,15 +497,15 @@ export function SettingsDialog() {
 
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
-                        <Label>Max Tokens: {settings.maxTokens}</Label>
+                        <Label>Max output tokens: {settings.maxOutputTokens}</Label>
                         <Badge variant="secondary">Length</Badge>
                       </div>
                       <Slider
-                        value={[settings.maxTokens]}
+                        value={[settings.maxOutputTokens]}
                         min={256}
                         max={32768}
                         step={256}
-                        onValueChange={([v]) => updateSettings({ maxTokens: v })}
+                        onValueChange={([v]) => updateSettings({ maxOutputTokens: v })}
                       />
                       <p className="text-xs text-muted-foreground">
                         Maximum length of the response.
@@ -583,80 +567,7 @@ export function SettingsDialog() {
               </div>
             )}
 
-            {/* API Keys */}
-            {activeTab === 'api' && (
-              <div className="space-y-6">
-                <div>
-                  <h3 className="text-lg font-semibold mb-2">API Keys</h3>
-                  <p className="text-sm text-muted-foreground mb-6">
-                    Configure API keys to enable additional AI providers. Keys are stored locally in your browser.
-                  </p>
-                  
-                  <div className="space-y-4">
-                    {settings.apiConfigs.map((config) => (
-                      <div key={config.provider} className="p-4 rounded-xl border border-border bg-card">
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="flex items-center gap-2">
-                            <span className="text-lg">{config.icon}</span>
-                            <span className="font-medium">{config.name}</span>
-                            {config.enabled && config.apiKey && (
-                              <Badge variant="default" className="bg-success text-success-foreground">
-                                <Check className="h-3 w-3 mr-1" />
-                                Connected
-                              </Badge>
-                            )}
-                          </div>
-                          <Switch
-                            checked={config.enabled && config.apiKey.length > 0}
-                            onCheckedChange={(v) => {
-                              if (!v) {
-                                handleApiKeyChange(config.provider, '')
-                              }
-                            }}
-                            disabled={!config.apiKey}
-                          />
-                        </div>
-                        <div className="relative">
-                          <Input
-                            type={showApiKeys[config.provider] ? 'text' : 'password'}
-                            value={config.apiKey}
-                            onChange={(e) => handleApiKeyChange(config.provider, e.target.value)}
-                            placeholder={`Enter your ${config.name} API key...`}
-                            className="pr-10"
-                          />
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
-                            onClick={() => toggleApiKeyVisibility(config.provider)}
-                          >
-                            {showApiKeys[config.provider] ? (
-                              <EyeOff className="h-4 w-4" />
-                            ) : (
-                              <Eye className="h-4 w-4" />
-                            )}
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="p-4 rounded-xl bg-muted/50 border border-border">
-                  <div className="flex items-start gap-3">
-                    <Info className="h-5 w-5 text-primary shrink-0 mt-0.5" />
-                    <div className="text-sm">
-                      <p className="font-medium mb-1">Using Vercel AI Gateway</p>
-                      <p className="text-muted-foreground">
-                        By default, Nexinc uses the Vercel AI Gateway which provides access to OpenAI, 
-                        Anthropic, and Google models without requiring individual API keys. 
-                        Add your own keys for additional providers or custom usage limits.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
+            {activeTab === 'api' && <ByokConnectionPanel />}
 
             {/* Privacy Settings */}
             {activeTab === 'privacy' && (
@@ -672,7 +583,7 @@ export function SettingsDialog() {
                       </h4>
                       <p className="text-sm text-muted-foreground">
                         All your chats, settings, and API keys are stored locally in your browser. 
-                        Nothing is sent to our servers unless you explicitly share it.
+                        Nothing is synced to Nexinc cloud servers — chats live in this browser only.
                       </p>
                     </div>
 
@@ -682,8 +593,8 @@ export function SettingsDialog() {
                         API Key Security
                       </h4>
                       <p className="text-sm text-muted-foreground">
-                        API keys are stored encrypted in your browser&apos;s local storage. 
-                        They are only sent directly to the respective AI provider.
+                        API keys are AES-GCM wrapped in this browser, then forwarded over HTTPS through your Nexinc{' '}
+                        deployment to your selected provider — never persisted on disk server-side.
                       </p>
                     </div>
 
@@ -697,6 +608,7 @@ export function SettingsDialog() {
                           Delete All Chats
                         </Button>
                         <Button variant="destructive" size="sm" onClick={() => {
+                          void clearAllProviderKeys()
                           resetSettings()
                           clearAllChats()
                         }}>

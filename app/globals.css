@@ -199,4 +199,61 @@
   .prose th {
     @apply bg-muted font-semibold;
   }
+
+  html {
+    scrollbar-gutter: stable;
+  }
+}
+
+@layer utilities {
+  .nexinc-shell-bg {
+    @apply bg-gradient-to-br from-background via-background to-primary/10 dark:via-background dark:to-primary/15;
+    background-size: cover;
+    min-height: 100dvh;
+  }
+
+  .nexinc-glass {
+    @apply border shadow-2xl shadow-primary/10;
+    background-color: oklch(from var(--card) l c h / 0.88);
+    backdrop-filter: blur(20px);
+  }
+
+  .dark .nexinc-glass {
+    background-color: oklch(from var(--card) l c h / 0.55);
+    backdrop-filter: blur(26px);
+  }
+
+  .nexinc-glass-soft {
+    backdrop-filter: blur(14px);
+    background-color: oklch(from var(--muted) l c h / 0.4);
+  }
+
+  .nexinc-chip-active {
+    box-shadow:
+      inset 0 1px 0 oklch(1 0 0 / 0.12),
+      0 1px 14px oklch(from var(--primary) l c h / 0.35);
+  }
+
+  .animate-stream-caret::after {
+    content: '';
+    display: inline-block;
+    width: 2px;
+    height: 0.95em;
+    margin-left: 2px;
+    vertical-align: -0.1em;
+    background: oklch(from var(--primary) l c h / 0.85);
+    animation: nexincCaret 900ms ease-in-out infinite alternate;
+    border-radius: 1px;
+  }
+
+  @keyframes nexincCaret {
+    from {
+      opacity: 0.15;
+      transform: scaleY(0.65);
+    }
+    to {
+      opacity: 1;
+      transform: scaleY(1);
+    }
+  }
 }

@@ -2,7 +2,9 @@
 
 import { useMemo, useState } from 'react'
 import { useChatStore } from '@/lib/store'
-import { modelConfigs, APIProvider, getModelsByProvider } from '@/lib/types'
+import type { ByokProvider } from '@/lib/byok/types'
+import { BYOK_PROVIDER_LABELS } from '@/lib/byok/types'
+import { catalogForProvider } from '@/lib/byok/model-catalog'
 import {
   Dialog,
   DialogContent,
@@ -12,208 +14,177 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import {
-  Search,
-  Sparkles,
-  Zap,
-  Brain,
-  Image as ImageIcon,
-  FileText,
-  Code,
-  Check,
-  Info,
-  Star,
-} from 'lucide-react'
+import { Search, Sparkles, Zap, Layers, Globe, Cpu, Hexagon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-const providerTabs = [
-  { id: 'all', label: 'All Models', icon: Sparkles },
-  { id: 'openai', label: 'OpenAI', icon: () => <span className="text-sm">🟢</span> },
-  { id: 'anthropic', label: 'Anthropic', icon: () => <span className="text-sm">🟠</span> },
-  { id: 'google', label: 'Google', icon: () => <span className="text-sm">🔵</span> },
-  { id: 'groq', label: 'Groq', icon: Zap },
-  { id: 'xai', label: 'xAI', icon: () => <span className="text-sm">✖️</span> },
+type TabId = ByokProvider | 'all'
+
+const providerTabs: { id: TabId; label: string; icon: typeof Sparkles }[] = [
+  { id: 'all', label: 'All', icon: Layers },
+  { id: 'openai', label: 'OpenAI', icon: Cpu },
+  { id: 'gemini', label: 'Gemini', icon: Sparkles },
+  { id: 'openrouter', label: 'OpenRouter', icon: Globe },
+  { id: 'anthropic', label: 'Claude', icon: Hexagon },
 ]
 
-const capabilityIcons = {
-  text: { icon: Sparkles, label: 'Text' },
-  image: { icon: ImageIcon, label: 'Vision' },
-  pdf: { icon: FileText, label: 'PDF' },
-  code: { icon: Code, label: 'Code' },
-  reasoning: { icon: Brain, label: 'Reasoning' },
-}
-
-const speedColors = {
-  fast: 'bg-success/20 text-success',
-  medium: 'bg-warning/20 text-warning-foreground',
-  slow: 'bg-primary/20 text-primary',
-}
-
-const qualityLabels = {
-  standard: 'Standard',
-  high: 'High Quality',
-  premium: 'Premium',
-}
+const tierLabel = {
+  fast: () => ({ text: 'Fast', className: 'text-emerald-500' }),
+  balanced: () => ({ text: 'Balanced', className: 'text-amber-500' }),
+  max: () => ({ text: 'Max', className: 'text-primary' }),
+} as const
 
 export function ModelSelector() {
-  const { modelSelectorOpen, setModelSelectorOpen, selectedModel, setSelectedModel, activeProvider, setActiveProvider } = useChatStore()
+  const {
+    modelSelectorOpen,
+    setModelSelectorOpen,
+    selectedModel,
+    setSelectedModel,
+    activeProvider,
+    setActiveProvider,
+    setSettingsOpen,
+  } = useChatStore()
+
   const [search, setSearch] = useState('')
 
-  const filteredModels = useMemo(() => {
-    let models = activeProvider === 'all' ? modelConfigs : getModelsByProvider(activeProvider as APIProvider)
-    
-    if (search) {
-      const query = search.toLowerCase()
-      models = models.filter(
-        (m) =>
-          m.nexincName.toLowerCase().includes(query) ||
-          m.description.toLowerCase().includes(query) ||
-          m.capabilities.some((c) => c.toLowerCase().includes(query))
-      )
-    }
-    
-    return models
+  const filtered = useMemo(() => {
+    const list =
+      activeProvider === 'all'
+        ? catalogForProvider('all')
+        : catalogForProvider(activeProvider as ByokProvider)
+
+    const q = search.trim().toLowerCase()
+    if (!q.length) return list
+    return list.filter(
+      (m) =>
+        m.label.toLowerCase().includes(q) ||
+        m.apiModelId.toLowerCase().includes(q) ||
+        m.description.toLowerCase().includes(q),
+    )
   }, [activeProvider, search])
 
-  const handleSelect = (modelId: string) => {
-    setSelectedModel(modelId)
+  const handleSelect = (id: string) => {
+    setSelectedModel(id)
     setModelSelectorOpen(false)
   }
 
   return (
     <Dialog open={modelSelectorOpen} onOpenChange={setModelSelectorOpen}>
-      <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
+      <DialogContent className="nexinc-glass max-w-4xl max-h-[88vh] flex flex-col border-border/60">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl">
             <Sparkles className="h-5 w-5 text-primary" />
-            Select Model
+            Models (BYOK)
           </DialogTitle>
           <DialogDescription className="sr-only">
-            Choose from various AI models across different providers including OpenAI, Anthropic, Google, Groq, and xAI.
+            Choose a curated model preset using your saved API keys.
           </DialogDescription>
         </DialogHeader>
 
-        {/* Search */}
+        <div className="flex flex-wrap gap-1 rounded-xl bg-muted/40 p-1">
+          {providerTabs.map((tab) => {
+            const Icon = tab.icon
+            const on = tab.id === 'all' ? activeProvider === 'all' : activeProvider === tab.id
+            return (
+              <Button
+                key={tab.id}
+                type="button"
+                variant={on ? 'default' : 'ghost'}
+                size="sm"
+                className={cn(
+                  'flex-1 min-w-[4.25rem] h-9 text-xs rounded-lg',
+                  on && 'nexinc-chip-active shadow-sm',
+                )}
+                onClick={() => setActiveProvider(tab.id === 'all' ? 'all' : tab.id)}
+              >
+                <Icon className="h-3.5 w-3.5 mr-1 shrink-0" />
+                {tab.label}
+              </Button>
+            )
+          })}
+        </div>
+
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search models..."
+            placeholder="Search presets…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-10"
+            className="pl-10 bg-background/60 backdrop-blur"
           />
         </div>
 
-        {/* Provider Tabs */}
-        <Tabs value={activeProvider} onValueChange={(v) => setActiveProvider(v as APIProvider | 'all')} className="flex-1 flex flex-col min-h-0">
-          <TabsList className="grid grid-cols-6 h-auto gap-1 bg-muted/50 p-1">
-            {providerTabs.map((tab) => (
-              <TabsTrigger
-                key={tab.id}
-                value={tab.id}
-                className="flex items-center gap-1.5 text-xs py-2"
-              >
-                <tab.icon className="h-4 w-4" />
-                <span className="hidden sm:inline">{tab.label}</span>
-              </TabsTrigger>
-            ))}
-          </TabsList>
-
-          <ScrollArea className="flex-1 mt-4">
-            <div className="grid gap-3 pr-4">
-              {filteredModels.length === 0 ? (
-                <div className="text-center py-12 text-muted-foreground">
-                  <Search className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>No models found</p>
-                  <p className="text-sm mt-1">Try a different search term</p>
-                </div>
-              ) : (
-                filteredModels.map((model) => (
+        <ScrollArea className="flex-1 min-h-[320px] pr-2">
+          <div className="grid gap-2 pb-4">
+            {filtered.length === 0 ? (
+              <div className="text-center py-16 text-muted-foreground">
+                No matches for &quot;{search}&quot;
+              </div>
+            ) : (
+              filtered.map((model) => {
+                const Tier = tierLabel[model.tier]
+                const t = Tier()
+                return (
                   <button
                     key={model.id}
+                    type="button"
                     onClick={() => handleSelect(model.id)}
                     className={cn(
-                      'w-full text-left p-4 rounded-xl border-2 transition-all hover:border-primary/50',
+                      'nexinc-glass-soft w-full text-left px-4 py-3 rounded-2xl border transition-all duration-150',
                       selectedModel === model.id
-                        ? 'border-primary bg-primary/5'
-                        : 'border-border bg-card'
+                        ? 'border-primary/70 ring-1 ring-primary/30 shadow-md'
+                        : 'border-transparent hover:border-border/80',
                     )}
                   >
-                    <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-start gap-4">
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="font-semibold truncate">{model.nexincName}</h3>
-                          {selectedModel === model.id && (
-                            <Check className="h-4 w-4 text-primary shrink-0" />
-                          )}
-                          {model.quality === 'premium' && (
-                            <Star className="h-4 w-4 text-warning shrink-0 fill-warning" />
-                          )}
+                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                          <p className="font-semibold leading-tight truncate">{model.label}</p>
+                          <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-muted/80 shrink-0">
+                            {BYOK_PROVIDER_LABELS[model.provider]}
+                          </span>
                         </div>
-                        <p className="text-sm text-muted-foreground mb-3">
-                          {model.description}
-                        </p>
-
-                        {/* Capabilities */}
-                        <div className="flex flex-wrap gap-1.5 mb-3">
-                          {model.capabilities.map((cap) => {
-                            const capInfo = capabilityIcons[cap]
-                            return (
-                              <Badge
-                                key={cap}
-                                variant="secondary"
-                                className="gap-1 text-xs font-normal"
-                              >
-                                <capInfo.icon className="h-3 w-3" />
-                                {capInfo.label}
-                              </Badge>
-                            )
-                          })}
-                        </div>
-
-                        {/* Stats */}
-                        <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                          <div className="flex items-center gap-1">
-                            <span className="font-medium">Context:</span>
-                            <span>{(model.contextWindow / 1000).toFixed(0)}K</span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <span className="font-medium">Output:</span>
-                            <span>{(model.maxOutput / 1000).toFixed(0)}K</span>
-                          </div>
-                        </div>
+                        <p className="text-sm text-muted-foreground line-clamp-2">{model.description}</p>
+                        {model.apiModelId ? (
+                          <p className="text-[11px] font-mono text-muted-foreground/80 mt-2 truncate">
+                            {model.apiModelId}
+                          </p>
+                        ) : (
+                          <p className="text-[11px] text-amber-500/90 mt-2">
+                            Paste your slug below Settings → Connections
+                          </p>
+                        )}
                       </div>
-
-                      {/* Speed & Quality badges */}
-                      <div className="flex flex-col gap-2 shrink-0">
-                        <Badge
-                          variant="secondary"
-                          className={cn('text-xs', speedColors[model.speed])}
-                        >
-                          <Zap className="h-3 w-3 mr-1" />
-                          {model.speed === 'fast' ? 'Fast' : model.speed === 'slow' ? 'Thoughtful' : 'Balanced'}
-                        </Badge>
-                        <Badge variant="outline" className="text-xs justify-center">
-                          {qualityLabels[model.quality]}
-                        </Badge>
+                      <div className="flex flex-col items-end gap-1 shrink-0">
+                        <span className={cn('text-[10px] uppercase font-semibold flex items-center gap-1', t.className)}>
+                          <Zap className="h-3 w-3" /> {t.text}
+                        </span>
+                        {selectedModel === model.id ? (
+                          <span className="text-xs text-primary font-medium">Selected</span>
+                        ) : null}
                       </div>
                     </div>
                   </button>
-                ))
-              )}
-            </div>
-          </ScrollArea>
-        </Tabs>
+                )
+              })
+            )}
+          </div>
+        </ScrollArea>
 
-        {/* Info footer */}
-        <div className="flex items-center gap-2 pt-4 border-t border-border text-xs text-muted-foreground">
-          <Info className="h-4 w-4" />
-          <span>
-            Models are powered by the Vercel AI Gateway. Configure API keys in Settings for additional providers.
-          </span>
+        <div className="flex gap-3 pt-1 border-t border-border/70 text-[11px] text-muted-foreground items-center justify-between flex-wrap">
+          <span>Keys encrypted in-browser; routed through /api/chat on your deployment.</span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8"
+            onClick={() => {
+              setModelSelectorOpen(false)
+              setSettingsOpen(true)
+            }}
+          >
+            Open Connections
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

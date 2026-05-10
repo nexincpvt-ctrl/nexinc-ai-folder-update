@@ -1,8 +1,10 @@
 'use client'
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
+import { flushSync } from 'react-dom'
 import { useChat } from '@ai-sdk/react'
-import { DefaultChatTransport } from 'ai'
+import { toast } from 'sonner'
+import type { UIMessage } from 'ai'
 import { useTheme } from 'next-themes'
 import { Sidebar } from '@/components/sidebar'
 import { ChatArea } from '@/components/chat-area'
@@ -10,24 +12,28 @@ import { InputArea } from '@/components/input-area'
 import { ModelSelector } from '@/components/model-selector'
 import { SettingsDialog } from '@/components/settings-dialog'
 import { useChatStore } from '@/lib/store'
-import { Attachment, Chat } from '@/lib/types'
+import { Attachment } from '@/lib/types'
 import { Menu, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { useByokChatTransport } from '@/hooks/use-byok-chat-transport'
+import { resolveEffectiveModel } from '@/lib/byok/effective-model'
+import { chatToMarkdownExport } from '@/lib/export-chat'
 
 function generateId() {
-  return Math.random().toString(36).substring(2, 15)
+  return crypto.randomUUID()
 }
 
 function generateTitle(content: string): string {
   const words = content.split(' ').slice(0, 6).join(' ')
-  return words.length > 40 ? words.substring(0, 40) + '...' : words || 'New Chat'
+  return words.length > 40 ? `${words.slice(0, 40)}…` : words || 'New Chat'
 }
 
 export default function HomePage() {
   const [input, setInput] = useState('')
-  const [chatId, setChatId] = useState<string | null>(null)
-  
+  const ephemeralDraftIdRef = useRef(generateId())
+  const prevHydratedChatIdRef = useRef<string | null>(null)
+
   const {
     chats,
     currentChatId,
@@ -42,172 +48,271 @@ export default function HomePage() {
 
   const { setTheme } = useTheme()
 
-  // Sync theme with settings
   useEffect(() => {
     setTheme(settings.theme)
   }, [settings.theme, setTheme])
 
-  // Create transport for this chat
-  const transport = new DefaultChatTransport({
-    api: '/api/chat',
-    prepareSendMessagesRequest: ({ messages }) => ({
-      body: {
-        messages,
-        modelId: selectedModel,
-        systemPrompt: settings.systemPrompt,
-        temperature: settings.temperature,
-        maxTokens: settings.maxTokens,
-      },
-    }),
+  const transport = useByokChatTransport({
+    selectedModelId: selectedModel,
+    systemPrompt: settings.systemPrompt,
+    temperature: settings.temperature,
+    maxOutputTokens: settings.maxOutputTokens,
+    customOpenRouterModelId: settings.customOpenRouterModelId,
   })
 
-  const { messages, sendMessage, status, setMessages, stop } = useChat({
-    id: chatId || undefined,
-    transport,
-  })
+  const useChatSessionId = currentChatId ?? ephemeralDraftIdRef.current
+
+  const { messages, sendMessage, status, setMessages, stop, error, clearError, regenerate } =
+    useChat({
+      id: useChatSessionId,
+      transport,
+      onError: (err) => {
+        toast.error(err.message ?? 'Request failed.')
+      },
+    })
 
   const isLoading = status === 'streaming' || status === 'submitted'
 
-  // Load messages when switching chats
   useEffect(() => {
-    if (currentChatId && currentChatId !== chatId) {
-      const chat = chats.find(c => c.id === currentChatId)
-      if (chat) {
-        setChatId(currentChatId)
-        // Convert stored messages to UIMessage format
-        const uiMessages = chat.messages.map(m => ({
-          id: m.id,
-          role: m.role as 'user' | 'assistant',
-          parts: [{ type: 'text' as const, text: m.content }],
-          createdAt: m.createdAt,
-        }))
-        setMessages(uiMessages)
-      }
-    } else if (!currentChatId) {
-      setChatId(null)
-      setMessages([])
-    }
-  }, [currentChatId, chatId, chats, setMessages])
+    const prevId = prevHydratedChatIdRef.current
+    const switchedView = prevId !== currentChatId
+    prevHydratedChatIdRef.current = currentChatId
 
-  // Save messages when they change
-  useEffect(() => {
-    if (chatId && messages.length > 0) {
-      const storedMessages = messages.map(m => ({
-        id: m.id,
-        role: m.role as 'user' | 'assistant' | 'system',
-        content: m.parts?.filter((p): p is { type: 'text'; text: string } => p.type === 'text')
-          .map(p => p.text).join('') || '',
-        createdAt: m.createdAt || new Date(),
-      }))
-      
-      updateChat(chatId, { messages: storedMessages })
+    if (!currentChatId) {
+      setMessages([])
+      return
     }
-  }, [messages, chatId, updateChat])
+
+    const chat = chats.find((c) => c.id === currentChatId)
+    if (!chat) return
+
+    if (!switchedView) return
+
+    if (chat.messages.length === 0) {
+      const keepOptimisticDraft = prevId === null && messages.length > 0
+      if (!keepOptimisticDraft) setMessages([])
+      return
+    }
+
+    const uiMessages = chat.messages.map((m) => ({
+      id: m.id,
+      role: m.role as 'user' | 'assistant',
+      parts: [{ type: 'text' as const, text: m.content }],
+      createdAt: m.createdAt,
+    }))
+    setMessages(uiMessages as UIMessage[])
+  }, [currentChatId, chats, messages.length, setMessages])
+
+  useEffect(() => {
+    if (!currentChatId || messages.length === 0) return
+    const storedMessages = messages.map((m) => ({
+      id: m.id,
+      role: m.role as 'user' | 'assistant' | 'system',
+      content:
+        m.parts
+          ?.filter((p): p is { type: 'text'; text: string } => p.type === 'text')
+          .map((p) => p.text)
+          .join('') ?? '',
+      createdAt: (m as { createdAt?: Date }).createdAt ?? new Date(),
+    }))
+    updateChat(currentChatId, { messages: storedMessages })
+  }, [messages, currentChatId, updateChat])
 
   const handleNewChat = useCallback(() => {
+    ephemeralDraftIdRef.current = generateId()
+    prevHydratedChatIdRef.current = null
+    clearError()
     setCurrentChat(null)
-    setChatId(null)
     setMessages([])
     setInput('')
-  }, [setCurrentChat, setMessages])
+    toast.success('Started a new workspace draft.')
+  }, [setCurrentChat, setMessages, clearError])
 
-  const handleSelectChat = useCallback((id: string) => {
-    setCurrentChat(id)
-  }, [setCurrentChat])
+  const handleSelectChat = useCallback(
+    (id: string) => {
+      clearError()
+      setCurrentChat(id)
+    },
+    [setCurrentChat, clearError],
+  )
 
-  const handleSend = useCallback(async (attachments?: Attachment[]) => {
-    if (!input.trim() && !attachments?.length) return
+  const handleSend = useCallback(
+    async (attachments?: Attachment[]) => {
+      if (!input.trim() && !attachments?.length) return
 
-    let currentChatId = chatId
-
-    // Create new chat if needed
-    if (!currentChatId) {
-      currentChatId = generateId()
-      const newChat: Chat = {
-        id: currentChatId,
-        title: generateTitle(input),
-        messages: [],
-        model: selectedModel,
-        createdAt: new Date(),
-        updatedAt: new Date(),
+      const resolved = resolveEffectiveModel(selectedModel, settings)
+      if (!resolved) {
+        toast.error('Pick a model or set an OpenRouter slug in Settings.')
+        return
       }
-      addChat(newChat)
-      setCurrentChat(currentChatId)
-      setChatId(currentChatId)
-    }
-
-    // Build message with attachments
-    let messageContent = input
-
-    if (attachments?.length) {
-      const attachmentTexts = attachments
-        .filter(a => a.content)
-        .map(a => `[${a.type.toUpperCase()}: ${a.name}]\n${a.content}`)
-        .join('\n\n')
-      
-      if (attachmentTexts) {
-        messageContent = `${attachmentTexts}\n\n${input}`
+      const { loadProviderKey } = await import('@/lib/byok/crypto')
+      if (!(await loadProviderKey(resolved.provider))) {
+        toast.error(`Add your API key for ${resolved.provider}.`)
+        return
       }
-    }
 
-    setInput('')
-    
-    // Send message
-    sendMessage({ text: messageContent })
-  }, [input, chatId, selectedModel, addChat, setCurrentChat, sendMessage])
+      clearError()
+
+      const sessionId = currentChatId ?? ephemeralDraftIdRef.current
+      const alreadySaved = chats.some((c) => c.id === sessionId)
+
+      if (!alreadySaved) {
+        addChat({
+          id: sessionId,
+          title: generateTitle(input),
+          messages: [],
+          model: selectedModel,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        })
+        setCurrentChat(sessionId)
+      }
+
+      let messageContent = input
+
+      if (attachments?.length) {
+        const attachmentTexts = attachments
+          .filter((a) => a.content)
+          .map((a) => `[${a.type.toUpperCase()}: ${a.name}]\n${a.content}`)
+          .join('\n\n')
+
+        if (attachmentTexts) {
+          messageContent = `${attachmentTexts}\n\n${input}`
+        }
+      }
+
+      setInput('')
+      sendMessage({ text: messageContent })
+    },
+    [
+      input,
+      currentChatId,
+      chats,
+      selectedModel,
+      settings,
+      addChat,
+      setCurrentChat,
+      sendMessage,
+      clearError,
+    ],
+  )
 
   const handleSuggestionClick = useCallback((suggestion: string) => {
     setInput(suggestion)
   }, [])
 
+  const handleRegenerateAssistant = useCallback(
+    async (assistantMessageId: string | undefined) => {
+      clearError()
+      try {
+        if (assistantMessageId) await regenerate({ messageId: assistantMessageId })
+        else await regenerate()
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : 'Regenerate failed')
+      }
+    },
+    [clearError, regenerate],
+  )
+
+  const handleEditUserMessage = useCallback(
+    async (messageId: string, newText: string) => {
+      const trimmed = newText.trim()
+      if (!trimmed) return
+      clearError()
+      flushSync(() => {
+        setMessages((prev) => {
+          const i = prev.findIndex((m) => m.id === messageId)
+          if (i < 0) return prev
+          const clone = [...prev]
+          const base = clone[i]
+          clone[i] = {
+            ...base,
+            parts: [{ type: 'text', text: trimmed }],
+          } as UIMessage
+          return clone.slice(0, i + 1)
+        })
+      })
+      await regenerate({ messageId })
+    },
+    [clearError, regenerate, setMessages],
+  )
+
+  const handleClearCurrentChat = useCallback(() => {
+    if (!currentChatId) return
+    setMessages([])
+    updateChat(currentChatId, { messages: [] })
+    toast.message('Conversation cleared.')
+  }, [currentChatId, setMessages, updateChat])
+
+  const exportChatFile = useCallback(
+    (id: string) => {
+      const chat = chats.find((c) => c.id === id)
+      if (!chat) return
+      const blob = new Blob([chatToMarkdownExport(chat)], { type: 'text/markdown;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${chat.title.slice(0, 48).replace(/[/\\?%*:|"<>]/g, '-') || 'chat'}.md`
+      a.click()
+      URL.revokeObjectURL(url)
+      toast.success('Exported markdown transcript.')
+    },
+    [chats],
+  )
+
   return (
-    <div className="flex h-screen bg-background overflow-x-auto">
-      {/* Sidebar */}
-      <div className={cn(
-        'shrink-0 transition-all duration-300',
-        sidebarOpen ? 'w-72' : 'w-14'
-      )}>
-        <Sidebar onNewChat={handleNewChat} onSelectChat={handleSelectChat} />
+    <div className="nexinc-shell-bg flex h-screen overflow-x-auto overflow-y-hidden relative">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_oklch(from_var(--primary)_l_c_h_/_0.14),_transparent_55%)]" />
+
+      <div
+        className={cn(
+          'relative shrink-0 z-10 backdrop-blur-sm transition-all duration-300',
+          sidebarOpen ? 'w-72' : 'w-14',
+        )}
+      >
+        <Sidebar
+          onNewChat={handleNewChat}
+          onSelectChat={handleSelectChat}
+          onClearCurrentMessages={handleClearCurrentChat}
+          onExportChat={exportChatFile}
+        />
       </div>
 
-      {/* Main Content */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Header (mobile) */}
-        <header className="flex items-center justify-between px-4 py-3 border-b border-border md:hidden">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-          >
+      <main className="relative z-10 flex-1 flex flex-col min-w-0 overflow-hidden backdrop-blur-[2px]">
+        <header className="nexinc-glass-soft flex md:hidden items-center justify-between px-4 py-3 border-b border-border/60 shrink-0">
+          <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(!sidebarOpen)}>
             <Menu className="h-5 w-5" />
           </Button>
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center shadow-md">
               <Sparkles className="h-4 w-4 text-primary-foreground" />
             </div>
-            <span className="font-semibold">Nexinc</span>
+            <span className="font-semibold tracking-tight">Nexinc</span>
           </div>
           <div className="w-9" />
         </header>
 
-        {/* Chat Area */}
-        <ChatArea 
-          messages={messages} 
+        <ChatArea
+          messages={messages}
           isLoading={isLoading}
+          error={error}
+          markdownEnabled={settings.enableMarkdown}
           onSuggestionClick={handleSuggestionClick}
+          onRegenerate={handleRegenerateAssistant}
+          onEditUserMessage={handleEditUserMessage}
         />
 
-        {/* Input Area */}
-        <InputArea
-          value={input}
-          onChange={setInput}
-          onSend={handleSend}
-          onStop={stop}
-          isLoading={isLoading}
-        />
+        <div className="px-4 pb-safe">
+          <InputArea
+            value={input}
+            onChange={setInput}
+            onSend={(atts) => void handleSend(atts)}
+            onStop={stop}
+            isLoading={isLoading}
+          />
+        </div>
       </main>
 
-      {/* Dialogs */}
       <ModelSelector />
       <SettingsDialog />
     </div>

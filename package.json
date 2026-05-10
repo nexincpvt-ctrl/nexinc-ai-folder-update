@@ -9,6 +9,9 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.76",
+    "@ai-sdk/google": "^3.0.71",
+    "@ai-sdk/openai": "^3.0.63",
     "@ai-sdk/react": "^3.0.179",
     "@hookform/resolvers": "^3.9.1",
     "@radix-ui/react-accordion": "1.2.12",
@@ -61,6 +64,8 @@
     "react-resizable-panels": "^2.1.7",
     "react-syntax-highlighter": "^16.1.1",
     "recharts": "2.15.0",
+    "rehype-sanitize": "^6.0.0",
+    "remark-gfm": "^4.0.1",
     "sonner": "^1.7.1",
     "swr": "^2.4.1",
     "tailwind-merge": "^3.3.1",
